@@ -9,6 +9,7 @@ const navItems = [
   { href: "/agents", label: "Agents", icon: "◈" },
   { href: "/tasks", label: "Tasks", icon: "▸" },
   { href: "/models", label: "Models", icon: "◇" },
+  { href: "/research", label: "Research", icon: "⌕" },
   { href: "/security", label: "Security", icon: "⬡" },
   { href: "/audit", label: "Audit", icon: "◎" },
   { href: "/settings", label: "Settings", icon: "⚙" },
