@@ -51,7 +51,6 @@ function StatusIndicator({ enabled }: { enabled: boolean }) {
 export default function ModelsPage() {
   const models = modelRegistry.getAllModels();
   const llmProviders = providerManager.getAllProviders();
-  const registryProviders = modelRegistry.getAllProviders();
 
   return (
     <div className="space-y-6">

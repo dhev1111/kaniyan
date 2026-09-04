@@ -1,11 +1,8 @@
 import type {
+  AgentExecutor,
   AgentExecutorInput,
   AgentExecutorOutput,
 } from "./types";
-
-export interface AgentExecutor {
-  execute(input: AgentExecutorInput): Promise<AgentExecutorOutput>;
-}
 
 export class MockExecutor implements AgentExecutor {
   async execute(
@@ -50,27 +47,80 @@ export function getExecutor(agentRole: string): AgentExecutor {
   return executorRegistry.get(agentRole) ?? new MockExecutor();
 }
 
+const AGENT_ROLES = [
+  "researcher",
+  "planner",
+  "product_manager",
+  "architect",
+  "coder",
+  "designer",
+  "tester",
+  "security_engineer",
+  "reviewer",
+  "devops_engineer",
+  "documenter",
+  "knowledge_agent",
+  "model_researcher",
+  "github_researcher",
+  "benchmark_agent",
+  "learning_agent",
+];
+
+let initialized = false;
+
 export function initializeDefaultExecutors(): void {
-  const mockExecutor = new MockExecutor();
-  const roles = [
-    "researcher",
-    "planner",
-    "product_manager",
-    "architect",
-    "coder",
-    "designer",
-    "tester",
-    "security_engineer",
-    "reviewer",
-    "devops_engineer",
-    "documenter",
-    "knowledge_agent",
-    "model_researcher",
-    "github_researcher",
-    "benchmark_agent",
-    "learning_agent",
-  ];
-  for (const role of roles) {
-    registerExecutor(role, mockExecutor);
+  if (initialized) return;
+  initialized = true;
+
+  const mode = process.env.KANIYAN_EXECUTION_MODE ?? "mock";
+
+  if (mode === "real") {
+    import("../llm/executor")
+      .then(({ LLMAgentExecutor }) => {
+        const realExecutor = new LLMAgentExecutor();
+        for (const role of AGENT_ROLES) {
+          registerExecutor(role, realExecutor);
+        }
+      })
+      .catch(() => {
+        const mockExecutor = new MockExecutor();
+        for (const role of AGENT_ROLES) {
+          registerExecutor(role, mockExecutor);
+        }
+      });
+  } else {
+    const mockExecutor = new MockExecutor();
+    for (const role of AGENT_ROLES) {
+      registerExecutor(role, mockExecutor);
+    }
+  }
+}
+
+export async function initializeExecutorsAsync(): Promise<void> {
+  if (initialized) return;
+
+  const mode = process.env.KANIYAN_EXECUTION_MODE ?? "mock";
+
+  if (mode === "real") {
+    try {
+      const { LLMAgentExecutor } = await import("../llm/executor");
+      const realExecutor = new LLMAgentExecutor();
+      for (const role of AGENT_ROLES) {
+        registerExecutor(role, realExecutor);
+      }
+      initialized = true;
+    } catch {
+      const mockExecutor = new MockExecutor();
+      for (const role of AGENT_ROLES) {
+        registerExecutor(role, mockExecutor);
+      }
+      initialized = true;
+    }
+  } else {
+    const mockExecutor = new MockExecutor();
+    for (const role of AGENT_ROLES) {
+      registerExecutor(role, mockExecutor);
+    }
+    initialized = true;
   }
 }

@@ -2,7 +2,15 @@ import {
   modelRegistry,
   llmRouter,
   providerManager,
+  LLMAgentExecutor,
 } from "@/lib/llm";
+import type { AgentExecutor } from "@/lib/control-plane/types";
+import {
+  MockExecutor,
+  getExecutor,
+  registerExecutor,
+  initializeDefaultExecutors,
+} from "@/lib/control-plane/executor";
 
 class MockProvider {
   readonly id: string;
@@ -244,5 +252,77 @@ describe("LLMAgentExecutor", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toBeDefined();
+  });
+});
+
+describe("FIX 1 — Canonical AgentExecutor", () => {
+  it("should not re-export AgentExecutor interface from executor module", async () => {
+    const executorMod = await import("@/lib/control-plane/executor");
+    expect((executorMod as Record<string, unknown>).AgentExecutor).toBeUndefined();
+  });
+
+  it("should have MockExecutor conforming to AgentExecutor interface", () => {
+    const mock = new MockExecutor();
+    expect(typeof mock.execute).toBe("function");
+    const check: AgentExecutor = mock;
+    expect(check).toBe(mock);
+  });
+
+  it("should have LLMAgentExecutor conforming to AgentExecutor interface", () => {
+    const llmExec = new LLMAgentExecutor();
+    expect(typeof llmExec.execute).toBe("function");
+    const check: AgentExecutor = llmExec;
+    expect(check).toBe(llmExec);
+  });
+});
+
+describe("FIX 2 — LLMAgentExecutor barrel export", () => {
+  it("should be importable from @/lib/llm barrel", () => {
+    expect(LLMAgentExecutor).toBeDefined();
+    expect(typeof LLMAgentExecutor).toBe("function");
+  });
+
+  it("should instantiate correctly", () => {
+    const exec = new LLMAgentExecutor();
+    expect(exec).toBeInstanceOf(LLMAgentExecutor);
+  });
+});
+
+describe("FIX 3 — Execution mode selection", () => {
+  it("should default to MockExecutor in mock mode", () => {
+    const original = process.env.KANIYAN_EXECUTION_MODE;
+    delete process.env.KANIYAN_EXECUTION_MODE;
+    initializeDefaultExecutors();
+    const exec = getExecutor("coder");
+    expect(exec).toBeInstanceOf(MockExecutor);
+    if (original !== undefined) {
+      process.env.KANIYAN_EXECUTION_MODE = original;
+    }
+  });
+
+  it("should return MockExecutor for unknown roles", () => {
+    const exec = getExecutor("nonexistent_role_xyz");
+    expect(exec).toBeInstanceOf(MockExecutor);
+  });
+
+  it("should allow registering custom executors", () => {
+    const custom = new MockExecutor();
+    registerExecutor("custom_test_role", custom);
+    const exec = getExecutor("custom_test_role");
+    expect(exec).toBe(custom);
+  });
+
+  it("should not require API keys in mock mode", () => {
+    const original = process.env.KANIYAN_EXECUTION_MODE;
+    delete process.env.KANIYAN_EXECUTION_MODE;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GROQ_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    initializeDefaultExecutors();
+    const exec = getExecutor("coder");
+    expect(exec).toBeInstanceOf(MockExecutor);
+    if (original !== undefined) {
+      process.env.KANIYAN_EXECUTION_MODE = original;
+    }
   });
 });
