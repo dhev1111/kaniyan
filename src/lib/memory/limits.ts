@@ -1,0 +1,28 @@
+/**
+ * M5 – Memory subsystem limits.
+ * All size bounds are explicit so ingestion, retrieval and consolidation
+ * behave deterministically and can never be driven to unbounded growth.
+ */
+
+export const MEMORY_LIMITS = {
+  MAX_MEMORY_CONTENT_CHARS: 200_000,
+  MIN_MEMORY_CONTENT_CHARS: 1,
+  MAX_TAGS_PER_MEMORY: 20,
+  MAX_TAG_CHARS: 64,
+  MAX_EXTRA_METADATA_KEYS: 16,
+  MAX_EXTRA_METADATA_KEY_CHARS: 64,
+  MAX_EXTRA_METADATA_VALUE_CHARS: 256,
+  MAX_RELATIONSHIPS_PER_MEMORY: 64,
+  MAX_CONFLICTS_PER_MEMORY: 32,
+  MAX_REASON_CHARS: 256,
+  MAX_SOURCE_ID_CHARS: 128,
+  MAX_SOURCE_URL_CHARS: 2048,
+  MAX_ORIGIN_CHARS: 512,
+  MAX_TITLE_CHARS: 256,
+  MAX_VERSION_NUMBER: 1_000_000,
+  MAX_VERSION_HISTORY: 256,
+  DEFAULT_MEMORY_PAGE_SIZE: 100,
+  MAX_MEMORY_PAGE_SIZE: 1000,
+} as const;
+
+export type MemoryLimits = typeof MEMORY_LIMITS;
