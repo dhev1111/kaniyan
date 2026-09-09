@@ -8,7 +8,11 @@ import {
   parseUrlsPayload,
   searchWithConfiguredProvider,
   runWebResearch,
+  fetchWebPage,
+  recordWebResearchReport,
 } from "../index";
+import { ResearchService } from "../../service";
+import { InMemoryResearchRepository } from "../../repository";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_SEARCH_URL = process.env.KANIYAN_WEB_SEARCH_URL;
@@ -21,20 +25,15 @@ function restoreFetch(): void {
   (globalThis as { fetch: typeof fetch }).fetch = ORIGINAL_FETCH;
 }
 
-const htmlResponse = {
-  ok: true,
-  status: 200,
-  redirected: false,
-  headers: { get: () => "text/html" },
-  text: () =>
-    Promise.resolve("This is a real article about the topic. It has sentences to extract."),
-  arrayBuffer: () =>
-    Promise.resolve(
-      new TextEncoder().encode(
-        "<html><head><title>Article</title></head><body>This is a real article about the topic. It has enough detail to extract a claim.</body></html>"
-      ).buffer
-    ),
-} as unknown as Response;
+const HTML_PAGE =
+  "<html><head><title>Article</title></head><body>This is a real article about the topic. It has enough detail to extract a claim and it supports the research query.</body></html>";
+
+function htmlResponse(): Response {
+  return new Response(HTML_PAGE, {
+    status: 200,
+    headers: { "content-type": "text/html" },
+  });
+}
 
 afterEach(() => {
   restoreFetch();
@@ -197,7 +196,7 @@ describe("M4.4 — provider-enabled behavior (network mocked)", () => {
 
 describe("M4.4 — runWebResearch pipeline (network mocked)", () => {
   it("fetches safe URLs, rejects unsafe ones, and produces a full report", async () => {
-    mockFetch((() => Promise.resolve(htmlResponse)) as typeof fetch);
+    mockFetch((() => Promise.resolve(htmlResponse())) as typeof fetch);
 
     const report = await runWebResearch({
       query: "test",
@@ -219,7 +218,7 @@ describe("M4.4 — runWebResearch pipeline (network mocked)", () => {
   });
 
   it("returns empty results when all URLs are unsafe/skipped", async () => {
-    mockFetch((() => Promise.resolve(htmlResponse)) as typeof fetch);
+    mockFetch((() => Promise.resolve(htmlResponse())) as typeof fetch);
 
     const report = await runWebResearch({
       query: "test",
@@ -229,5 +228,236 @@ describe("M4.4 — runWebResearch pipeline (network mocked)", () => {
 
     expect(report.sources.every((s) => s.status !== "fetched")).toBe(true);
     expect(report.claims.length).toBe(0);
+  });
+});
+
+describe("M4.4 — redirect SSRF protection (fetchWebPage)", () => {
+  it("follows a safe HTTPS → HTTPS redirect and records the hop", async () => {
+    mockFetch((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://example.com/a") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://example.org/b" },
+        });
+      }
+      return htmlResponse();
+    }) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/a");
+    expect(result.success).toBe(true);
+    expect(result.page).toBeDefined();
+    expect(result.page?.finalUrl).toBe("https://example.org/b");
+    expect(result.page?.redirectCount).toBe(1);
+  });
+
+  it("follows a multi-hop redirect and validates every hop", async () => {
+    const hops = new Map<string, string>([
+      ["https://example.com/start", "https://example.net/second"],
+      ["https://example.net/second", "https://example.org/final"],
+    ]);
+    mockFetch((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const next = hops.get(url);
+      if (next) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: next },
+        });
+      }
+      return htmlResponse();
+    }) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/start");
+    expect(result.success).toBe(true);
+    expect(result.page?.finalUrl).toBe("https://example.org/final");
+    expect(result.page?.redirectCount).toBe(2);
+  });
+
+  it("rejects a redirect to localhost", async () => {
+    mockFetch((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://example.com/a") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://localhost:8080/admin" },
+        });
+      }
+      return new Response("unexpected", { status: 200 });
+    }) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/a");
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/blocked/i);
+  });
+
+  it("rejects a redirect to a loopback address", async () => {
+    mockFetch((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://example.com/a") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://127.0.0.1/x" },
+        });
+      }
+      return new Response("unexpected", { status: 200 });
+    }) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/a");
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/blocked/i);
+  });
+
+  it("rejects a redirect to a private IPv4 address", async () => {
+    mockFetch((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://example.com/a") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://10.0.0.1/x" },
+        });
+      }
+      return new Response("unexpected", { status: 200 });
+    }) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/a");
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/blocked|private/i);
+  });
+
+  it("rejects a redirect to a non-HTTPS / dangerous protocol", async () => {
+    mockFetch((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://example.com/a") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://example.com/x" },
+        });
+      }
+      return new Response("unexpected", { status: 200 });
+    }) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/a");
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/HTTPS|blocked/i);
+  });
+
+  it("rejects redirect chains that exceed maxRedirects", async () => {
+    mockFetch((async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://example.com/loop" },
+      })) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/start", {
+      maxRedirects: 2,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Too many redirects/i);
+  });
+
+  it("rejects a redirect without a Location header", async () => {
+    mockFetch((async () =>
+      new Response(null, { status: 302 })) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/a");
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Location/i);
+  });
+
+  it("rejects an oversized response without unbounded buffering", async () => {
+    const bigBody = "x".repeat(1500);
+    mockFetch((async () =>
+      new Response(bigBody, {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })) as typeof fetch);
+
+    const result = await fetchWebPage("https://example.com/big", {
+      maxResponseBytes: 1000,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Response too large/i);
+  });
+});
+
+describe("M4.4 — research recording (recordWebResearchReport)", () => {
+  it("persists findings with non-zero count and correct source association", async () => {
+    const service = new ResearchService(new InMemoryResearchRepository());
+
+    mockFetch((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://example.com/article") {
+        return htmlResponse();
+      }
+      return new Response("forbidden", { status: 403 });
+    }) as typeof fetch);
+
+    const report = await runWebResearch({
+      query: "streaming",
+      urls: ["https://example.com/article"],
+      limit: 5,
+    });
+
+    expect(report.claims.length).toBeGreaterThanOrEqual(1);
+
+    const result = recordWebResearchReport(service, report);
+    expect(result.success).toBe(true);
+    if (!result.success || !result.record) {
+      throw new Error("expected recording to succeed");
+    }
+
+    expect(result.record.sourceIds.length).toBe(1);
+    expect(result.record.findingIds.length).toBeGreaterThan(0);
+
+    const findings = service.listFindings(result.record.runId);
+    expect(findings.length).toBe(result.record.findingIds.length);
+    for (const finding of findings) {
+      expect(result.record.sourceIds).toContain(finding.sourceId);
+      expect(finding.claim.length).toBeGreaterThan(0);
+      expect(finding.evidence.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("associates findings with the post-redirect final URL source", async () => {
+    const service = new ResearchService(new InMemoryResearchRepository());
+
+    mockFetch((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://example.com/start") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://example.com/article" },
+        });
+      }
+      if (url === "https://example.com/article") {
+        return htmlResponse();
+      }
+      return new Response("forbidden", { status: 403 });
+    }) as typeof fetch);
+
+    const report = await runWebResearch({
+      query: "streaming",
+      urls: ["https://example.com/start"],
+      limit: 5,
+    });
+
+    expect(report.sources).toHaveLength(1);
+    expect(report.sources[0].status).toBe("fetched");
+    expect(report.sources[0].finalUrl).toBe("https://example.com/article");
+
+    const result = recordWebResearchReport(service, report);
+    expect(result.success).toBe(true);
+    if (!result.success || !result.record) {
+      throw new Error("expected recording to succeed");
+    }
+
+    expect(result.record.sourceIds.length).toBe(1);
+    expect(result.record.findingIds.length).toBeGreaterThan(0);
+
+    const findings = service.listFindings(result.record.runId);
+    for (const finding of findings) {
+      expect(finding.sourceId).toBe(result.record.sourceIds[0]);
+    }
   });
 });

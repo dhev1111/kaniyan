@@ -23,6 +23,7 @@ export interface WebResearchSourceReport {
   title?: string;
   status: "fetched" | "skipped" | "failed";
   error?: string;
+  finalUrl?: string;
 }
 
 export interface WebResearchReport {
@@ -87,7 +88,12 @@ export async function runWebResearch(options: {
 
     const result = await fetchWebPage(url);
     if (result.success && result.page) {
-      sources.push({ url, title: result.page.title, status: "fetched" });
+      sources.push({
+        url,
+        title: result.page.title,
+        status: "fetched",
+        finalUrl: result.page.finalUrl,
+      });
       pagesFetched.push(result.page);
     } else {
       sources.push({ url, status: "failed", error: result.error });
@@ -212,7 +218,9 @@ export function recordWebResearchReport(
   const runId = runResult.run.id;
 
   const sourceIds: string[] = [];
-  const findingIds: string[] = [];
+  // Canonical mapping from every URL a recorded source is reachable at
+  // (requested URL and post-redirect final URL) to its ResearchService id.
+  const sourceIdByUrl = new Map<string, string>();
 
   for (const sourceReport of report.sources) {
     if (sourceReport.status !== "fetched") continue;
@@ -228,18 +236,24 @@ export function recordWebResearchReport(
     });
     if (sourceResult.success && sourceResult.source) {
       sourceIds.push(sourceResult.source.id);
+      sourceIdByUrl.set(sourceReport.url, sourceResult.source.id);
+      if (sourceReport.finalUrl && sourceReport.finalUrl !== sourceReport.url) {
+        sourceIdByUrl.set(sourceReport.finalUrl, sourceResult.source.id);
+      }
     }
   }
 
-  const claimsForSource = new Map<string, ExtractedClaim[]>();
+  const claimsBySource = new Map<string, ExtractedClaim[]>();
   for (const claim of report.claims) {
-    const existing = claimsForSource.get(claim.sourceUrl) ?? [];
+    const sourceId = sourceIdByUrl.get(claim.sourceUrl);
+    if (!sourceId) continue;
+    const existing = claimsBySource.get(sourceId) ?? [];
     existing.push(claim);
-    claimsForSource.set(claim.sourceUrl, existing);
+    claimsBySource.set(sourceId, existing);
   }
 
-  for (const sourceId of sourceIds) {
-    const claims = claimsForSource.get(sourceId) ?? [];
+  const findingIds: string[] = [];
+  for (const [sourceId, claims] of claimsBySource) {
     for (const claim of claims) {
       const findingResult = service.addFinding(runId, {
         sourceId,
