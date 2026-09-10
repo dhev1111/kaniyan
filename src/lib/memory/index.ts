@@ -102,3 +102,7 @@ export type {
   IngestRejection,
   MemoryCandidate,
 } from "./ingestion";
+
+export * from "./embedding";
+export * from "./vector";
+export * from "./retrieval";
