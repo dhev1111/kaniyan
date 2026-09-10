@@ -75,3 +75,30 @@ export type {
   MemoryDocument,
   SerializationMigration,
 } from "./serialization";
+
+export {
+  splitSentences,
+  wordWrap,
+  chunkText,
+} from "./chunking";
+
+export type {
+  ChunkOptions,
+  TextChunk,
+  Sentence,
+} from "./chunking";
+
+export {
+  ingest,
+  ingestSource,
+} from "./ingestion";
+
+export type {
+  IngestSource,
+  IngestOptions,
+  IngestRequest,
+  IngestResult,
+  IngestStats,
+  IngestRejection,
+  MemoryCandidate,
+} from "./ingestion";
