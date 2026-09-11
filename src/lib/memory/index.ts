@@ -106,3 +106,4 @@ export type {
 export * from "./embedding";
 export * from "./vector";
 export * from "./retrieval";
+export * from "./store";
