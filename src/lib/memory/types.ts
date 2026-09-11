@@ -118,6 +118,7 @@ export interface MemoryReference {
   createdAt: string;
   updatedAt: string;
   lastAccessedAt?: string;
+  expiresAt?: string;
   relationships: MemoryRelationship[];
   conflicts: MemoryConflict[];
 }

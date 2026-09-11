@@ -107,3 +107,4 @@ export * from "./embedding";
 export * from "./vector";
 export * from "./retrieval";
 export * from "./store";
+export * from "./lifecycle";
