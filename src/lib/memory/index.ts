@@ -108,3 +108,4 @@ export * from "./vector";
 export * from "./retrieval";
 export * from "./store";
 export * from "./lifecycle";
+export * from "./maintenance";

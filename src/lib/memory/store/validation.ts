@@ -111,6 +111,7 @@ export function copyMemoryReference(memory: MemoryReference): MemoryReference {
     createdAt: memory.createdAt,
     updatedAt: memory.updatedAt,
     lastAccessedAt: memory.lastAccessedAt,
+    expiresAt: memory.expiresAt,
     relationships: memory.relationships.map((entry) => ({ ...entry })),
     conflicts: memory.conflicts.map((entry) => ({
       conflictId: entry.conflictId,
