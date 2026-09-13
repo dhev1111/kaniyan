@@ -109,3 +109,4 @@ export * from "./retrieval";
 export * from "./store";
 export * from "./lifecycle";
 export * from "./maintenance";
+export * from "./versioning";
