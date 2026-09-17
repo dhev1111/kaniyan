@@ -109,6 +109,22 @@ export type AuditAction =
   | "project.create"
   | "project.update"
   | "project.delete"
+  | "project.plan.accepted"
+  | "project.task.created"
+  | "project.task.started"
+  | "project.task.completed"
+  | "project.task.failed"
+  | "project.task.retried"
+  | "project.task.cancelled"
+  | "project.checkpoint.created"
+  | "project.checkpoint.restored"
+  | "project.paused"
+  | "project.resumed"
+  | "project.approval.waiting"
+  | "project.cancelled"
+  | "project.completed"
+  | "project.artifact.created"
+  | "project.artifact.rejected"
   | "agent.create"
   | "agent.update"
   | "agent.start"
@@ -123,7 +139,10 @@ export type AuditAction =
   | "security.permission_deny"
   | "system.startup"
   | "system.shutdown"
-  | "system.self_modify";
+  | "system.self_modify"
+  | "capability.register"
+  | "capability.execute"
+  | "capability.approval";
 
 export interface AuditEvent {
   id: string;

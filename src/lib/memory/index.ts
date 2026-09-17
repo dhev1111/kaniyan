@@ -111,3 +111,4 @@ export * from "./lifecycle";
 export * from "./maintenance";
 export * from "./versioning";
 export * from "./recall";
+export * from "./api";
